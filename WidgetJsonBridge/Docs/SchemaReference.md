@@ -95,19 +95,47 @@
 | `MinDesiredWidth` / `MinDesiredHeight` | 数值 |
 
 ### CanvasPanel 子控件的 slot（`slot.properties`）
+
+> ⚠️ **本节曾写错过**（旧版列的 `Position` / `Size` / `Anchors` / `Alignment` 都不是属性）。
+> 下表已按「引擎反射 + 插件实际导出」双重核验订正。
+
+`UCanvasPanelSlot` 的 UPROPERTY **只有三个**：
+
 | 属性 | 类型 | 说明 |
 |---|---|---|
-| `Position` | 文本 | `(X=100.000000,Y=50.000000)` |
-| `Size` | 文本 | `(X=200.000000,Y=80.000000)` |
-| `Anchors` | 文本 | `(Minimum=(X=0,Y=0),Maximum=(X=1,Y=1))` |
-| `Alignment` | 文本 | `(X=0.5,Y=0.5)` |
-| `ZOrder` | 数值 | 渲染顺序，越大越靠上 |
+| `LayoutData` | `FAnchorData` 文本 | 位置/尺寸/锚点全在这一个结构体里，见下 |
+| `bAutoSize` | bool | 按内容自适应尺寸 |
+| `ZOrder` | 整数 | 渲染顺序，越大越靠上 |
+
+`FAnchorData` 文本格式：
+
+```
+(Offsets=(Left=..,Top=..,Right=..,Bottom=..),Anchors=(Minimum=(X=..,Y=..),Maximum=(X=..,Y=..)),Alignment=(X=..,Y=..))
+```
+
+- `Offsets` 是 `FMargin`；**锚点重合时它表达的是位置+尺寸**（`Left/Top` 为偏移，`Right/Bottom` 为右下边界）
+- 导出时**值为 0 的分量会被省略**，例如 `(Offsets=(Right=100.000000,Bottom=30.000000),Anchors=(...),Alignment=(...))`
+
+> 旧版的 `Position` / `Size` / `Anchors` / `Alignment` 在引擎里只是 `UFUNCTION` 存取器（`SetPosition` / `GetSize` 等），**不是 UPROPERTY**，反射序列化碰不到，按旧文档写会静默无效。
 
 ### HorizontalBox / VerticalBox 子控件的 slot
-| 属性 | 说明 |
+
+> ⚠️ 旧版写的 `Size.Rule = Auto | Fill` 也是错的（属性名和枚举值都不对）。
+
+| 属性 | 类型 | 说明 |
+|---|---|---|
+| `Size` | `FSlateChildSize` 文本 | 如 `(Value=1.000000,SizeRule=Fill)`；枚举是 **`Automatic`** 或 `Fill` |
+| `Padding` | 边距文本 | `(Left=0.000000,Top=8.000000,Right=0.000000,Bottom=8.000000)` |
+| `HorizontalAlignment` | 枚举 | `HAlign_Fill` / `HAlign_Left` / `HAlign_Center` / `HAlign_Right` |
+| `VerticalAlignment` | 枚举 | `VAlign_Fill` / `VAlign_Top` / `VAlign_Center` / `VAlign_Bottom` |
+
+### 其他槽类
+
+| 槽类型 | 属性 |
 |---|---|
-| `Size.Rule` | `Auto` 或 `Fill`（在 Size 文本内） |
-| `HorizontalAlignment` / `VerticalAlignment` | 枚举 |
+| `UButtonSlot` | `Padding`、`HorizontalAlignment`、`VerticalAlignment` |
+
+**通用办法**：任何槽类都可以先在编辑器里手工摆好一个，Ctrl+S 回写 JSON 后照抄格式——这比查文档可靠。
 
 ## 常见任务示例
 
@@ -141,18 +169,22 @@
 ```
 
 ### 3. 设置 CanvasPanel 子控件位置与锚点
+
+锚点居中（0.5, 0.5）、尺寸 200×80、以自身中心为轴：
+
 ```json
 "slot": {
   "class": "/Script/UMG.CanvasPanelSlot",
   "className": "CanvasPanelSlot",
   "properties": {
-    "Anchors": "(Minimum=(X=0.5,Y=0.5),Maximum=(X=0.5,Y=0.5))",
-    "Alignment": "(X=0.5,Y=0.5)",
-    "Position": "(X=-100.000000,Y=-40.000000)",
-    "Size": "(X=200.000000,Y=80.000000)"
+    "LayoutData": "(Offsets=(Left=-100.000000,Top=-40.000000,Right=100.000000,Bottom=40.000000),Anchors=(Minimum=(X=0.500000,Y=0.500000),Maximum=(X=0.500000,Y=0.500000)),Alignment=(X=0.500000,Y=0.500000))"
   }
 }
 ```
+
+- `Offsets` 在锚点重合（Minimum == Maximum）时表达的是**相对锚点的矩形**：`Left/Top` 是左上偏移，`Right/Bottom` 是右下偏移
+- 要让控件中心落在锚点上：`Left = -Width/2`、`Top = -Height/2`、`Right = Width/2`、`Bottom = Height/2`
+- 上例即 200×80 的控件以自身中心对齐锚点
 
 ## 约束与注意
 

@@ -9,9 +9,16 @@ AI 改 UIWidgets/**/*.json  ──ticker(1s)──> 重建 WidgetBlueprint 资�
 
 ## 环境
 
-- Unreal Engine 5.8（源码位于本机 `D:\Code\UE_5.8`）
-- 目标项目：`D:\Code\UE Projects\GreyCrown`（.uproject 已配置 `AdditionalPluginDirectories: ["D:/Code/UE Plugins"]` 并启用本插件）
+- Unreal Engine 5.8
 - 插件为纯 Editor 模块（`WidgetJsonBridgeEditor`），无 Runtime 代码
+- 引入方式：在目标项目 `.uproject` 里用 `AdditionalPluginDirectories` 指向本插件所在目录，并启用 `WidgetJsonBridge`：
+
+  ```json
+  "AdditionalPluginDirectories": ["<plugins-root>"],
+  "Plugins": [ { "Name": "WidgetJsonBridge", "Enabled": true } ]
+  ```
+
+  > **注意**：经 `AdditionalPluginDirectories` 引入的外部插件，编译产物落在**目标工程的** `Binaries/` 下，不在插件自己的目录里。判断插件是否已编译要看工程侧。
 
 ## 目录结构
 
@@ -32,10 +39,21 @@ WidgetJsonBridge/
 ## 构建
 
 ```powershell
-& "D:\Code\UE_5.8\Engine\Build\BatchFiles\Build.bat" GreyCrownEditor Win64 Development -Project="D:\Code\UE Projects\GreyCrown\GreyCrown.uproject" -WaitMutex
+& "<engine>/Build/BatchFiles/Build.bat" <Project>Editor Win64 Development -Project="<path>/<Project>.uproject" -NoHotReloadFromIDE -WaitMutex
 ```
 
-注意：编辑器运行中（Live Coding 激活）时编译会失败，需先关编辑器。
+### 关于 `-NoHotReloadFromIDE`（实测必需）
+
+UBT 有一个**按可执行文件路径命名的全局互斥体**检查（`HotReload.cs` 的 `CheckForLiveCodingSessionActive`）。因为所有 UE 编辑器都是同一个 `Engine/Binaries/Win64/UnrealEditor.exe`，所以**任何一个**开着 Live Coding 的编辑器都会锁死**所有**工程的编译——哪怕是完全无关的工程。
+
+报错原文：
+
+```
+Unable to build while Live Coding is active. Exit the editor and game,
+or press Ctrl+Alt+F11 if iterating on code in the editor or game
+```
+
+该检查的条件是 `BuildConfiguration.bAllowHotReloadFromIDE && ... && IsLiveCodingSessionActive(...)`；传 `-NoHotReloadFromIDE` 会把 `bAllowHotReloadFromIDE` 置为 `false` 直接跳过，**无需关闭编辑器，也不需要杀 LiveCodingConsole 进程**（互斥体是编辑器进程持有的，杀 console 没用）。
 
 ## 测试
 
@@ -43,7 +61,25 @@ WidgetJsonBridge/
 & "D:\Code\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "D:/Code/UE Projects/GreyCrown/GreyCrown.uproject" -unattended -nosplash -NullRHI -log -ExecCmds="Automation RunTests WidgetJsonBridge" -TestExit="Automation Test Queue Empty"
 ```
 
-结果查 `GreyCrown/Saved/Logs/GreyCrown.log` 中 `Test Completed` 行。测试会用到/产生真实资产：`UIWidgets/Test/SyncTest.json` ↔ `/Game/Test/SyncTest`。
+结果查 `<Project>/Saved/Logs/<Project>.log`。三个测试各自覆盖：
+
+| 测试 | 覆盖范围 |
+|---|---|
+| `WidgetJsonBridge.RoundTrip` | 纯内存：构造 WidgetTree → 导出 JSON → 修改文本 → 导入 → 断言文本与 slot 位置复原 |
+| `WidgetJsonBridge.ExportToFile` | 端到端：`Tick()` 从磁盘 JSON 导入资产 → 改文本 → 导出写回文件 → 断言落盘内容与导出结果一致 |
+| `WidgetJsonBridge.MappingAndHash` | 资产/JSON 路径双向映射、越出 `/Game` 与 `UIWidgets` 的拒绝、`contentHash` 稳定性 |
+
+全部通过时日志里会有：
+
+```
+LogAutomationCommandLine: Display: Found 3 automation tests based on 'WidgetJsonBridge'
+LogAutomationController: Display: Test Completed. Result={Success} Name={RoundTrip} Path={WidgetJsonBridge.RoundTrip}
+LogAutomationCommandLine: Display: ...Automation Test Queue Empty 3 tests performed.
+```
+
+测试会用到/产生真实资产：`UIWidgets/Test/SyncTest.json` ↔ `/Game/Test/SyncTest`。
+
+> 注意：跑测试会**改写** `UIWidgets/Test/SyncTest.json`（`ExportToFile` 会把文本改成 `Editor Edited` 再导出），也会刷新 `Content/{Examples,Test}/*.uasset`。这是设计如此，不是副作用。
 
 ## 核心机制
 

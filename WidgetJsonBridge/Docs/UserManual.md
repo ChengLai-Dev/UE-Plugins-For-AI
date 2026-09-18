@@ -10,15 +10,15 @@ WidgetJsonBridge 是一个 UE 编辑器插件，为 UMG User Widget 提供 JSON 
 
 ## 安装
 
-1. 插件源码位于 `D:\Code\UE Plugins\WidgetJsonBridge`（独立 git 仓库管理）
+1. 本插件位于仓库 `UE-Plugins-For-AI` 的 `WidgetJsonBridge/` 目录下；使用时可整体拷贝或 clone 到任意位置
 2. 目标项目的 `.uproject` 需包含：
    ```json
-   "AdditionalPluginDirectories": ["D:/Code/UE Plugins"],
+   "AdditionalPluginDirectories": ["<插件所在目录>"],
    "Plugins": [
      { "Name": "WidgetJsonBridge", "Enabled": true }
    ]
    ```
-3. 重新编译项目的 Editor 目标
+3. 重新编译项目的 Editor 目标（见 README「构建」，注意需要 `-NoHotReloadFromIDE`）
 
 ## 路径映射
 
