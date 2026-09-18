@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Widget Json Bridge",
+	"Description": "Bidirectional JSON synchronization for UMG User Widgets. Watches the project UIWidgets folder and rebuilds Widget Blueprints from JSON files; exports editor changes back to JSON on asset save.",
+	"Category": "Editor",
+	"CanContainContent": false,
+	"Installed": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "WidgetJsonBridgeEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
