@@ -22,6 +22,7 @@ public class WidgetJsonBridgeEditor : ModuleRules
 			"UMGEditor",
 			"Json",
 			"AssetTools",
+			"AssetRegistry",
 			"ToolMenus",
 			"Projects",
 		});

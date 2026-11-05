@@ -13,6 +13,7 @@ public:
 private:
 	void RegisterMenus();
 
+	FDelegateHandle MenuStartupHandle;
 	void ExportEditedWidgetToJson();
 
 	void ImportAllJsonFiles();
@@ -20,6 +21,10 @@ private:
 	void OpenSyncFolder();
 
 	void OpenDocsFolder();
+
+	void ExportPropertySchema();
+
+	static void ValidateNames();
 
 	bool OnTick(float DeltaTime);
 
@@ -30,4 +35,8 @@ private:
 	FTSTicker::FDelegateHandle TickerHandle;
 
 	FDelegateHandle SavedEventHandle;
+
+	struct IConsoleCommand* ExportSchemaCommand = nullptr;
+
+	struct IConsoleCommand* ValidateNamesCommand = nullptr;
 };

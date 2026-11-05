@@ -1,7 +1,10 @@
 #include "WidgetJsonBridgeEditorModule.h"
 
 #include "WidgetJsonSync.h"
+#include "WidgetJsonSerializer.h"
 #include "WidgetBlueprint.h"
+#include "Components/Widget.h"
+#include "Components/PanelSlot.h"
 #include "Editor.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "ToolMenus.h"
@@ -10,23 +13,59 @@
 #include "UObject/ObjectSaveContext.h"
 #include "Interfaces/IPluginManager.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformFileManager.h"
 #include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
+#include "Misc/DateTime.h"
+#include "HAL/IConsoleManager.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 #define LOCTEXT_NAMESPACE "FWidgetJsonBridgeEditorModule"
 
 void FWidgetJsonBridgeEditorModule::StartupModule()
 {
-	UToolMenus::RegisterStartupCallback(
+	MenuStartupHandle = UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FWidgetJsonBridgeEditorModule::RegisterMenus));
 
 	TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateRaw(this, &FWidgetJsonBridgeEditorModule::OnTick), 1.0f);
 
 	SavedEventHandle = UPackage::PackageSavedWithContextEvent.AddRaw(this, &FWidgetJsonBridgeEditorModule::OnPackageSaved);
+
+	ExportSchemaCommand = IConsoleManager::Get().RegisterConsoleCommand(
+		TEXT("WidgetJsonBridge.ExportSchema"),
+		TEXT("导出所有 UMG 控件类与槽类的可写属性 Schema 到 Saved/WidgetJsonBridge/PropertySchema/"),
+		FConsoleCommandDelegate::CreateRaw(this, &FWidgetJsonBridgeEditorModule::ExportPropertySchema));
+
+	ValidateNamesCommand = IConsoleManager::Get().RegisterConsoleCommand(
+		TEXT("WidgetJsonBridge.ValidateNames"),
+		TEXT("检查所有 Widget Blueprint 的 Hierarchy 显示名是否与对象名一致"),
+		FConsoleCommandDelegate::CreateStatic(&FWidgetJsonBridgeEditorModule::ValidateNames));
 }
 
 void FWidgetJsonBridgeEditorModule::ShutdownModule()
 {
+	if (MenuStartupHandle.IsValid())
+	{
+		UToolMenus::UnRegisterStartupCallback(MenuStartupHandle);
+		MenuStartupHandle.Reset();
+	}
+	// 菜单条目持有 this，热重载/禁用插件后不清掉就是悬垂指针。
+	if (UToolMenus* ToolMenus = UToolMenus::TryGet())
+	{
+		ToolMenus->RemoveSection("LevelEditor.MainMenu.Tools", "WidgetJsonBridge");
+	}
+	if (ExportSchemaCommand)
+	{
+		IConsoleManager::Get().UnregisterConsoleObject(ExportSchemaCommand);
+		ExportSchemaCommand = nullptr;
+	}
+	if (ValidateNamesCommand)
+	{
+		IConsoleManager::Get().UnregisterConsoleObject(ValidateNamesCommand);
+		ValidateNamesCommand = nullptr;
+	}
 	if (SavedEventHandle.IsValid())
 	{
 		UPackage::PackageSavedWithContextEvent.Remove(SavedEventHandle);
@@ -71,6 +110,12 @@ void FWidgetJsonBridgeEditorModule::RegisterMenus()
 		LOCTEXT("OpenDocsFolderTooltip", "打开插件文档目录（Schema 参考与使用手册）"),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateRaw(this, &FWidgetJsonBridgeEditorModule::OpenDocsFolder)));
+	Section.AddMenuEntry(
+		"ExportPropertySchema",
+		LOCTEXT("ExportPropertySchema", "Export Property Schema"),
+		LOCTEXT("ExportPropertySchemaTooltip", "把每个控件类/槽类的可写属性名、类型与值格式导出成 JSON，供 AI 查表"),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateRaw(this, &FWidgetJsonBridgeEditorModule::ExportPropertySchema)));
 }
 
 void FWidgetJsonBridgeEditorModule::ExportEditedWidgetToJson()
@@ -122,8 +167,32 @@ void FWidgetJsonBridgeEditorModule::OpenDocsFolder()
 	FPlatformProcess::ExploreFolder(*DocsDir);
 }
 
+void FWidgetJsonBridgeEditorModule::ValidateNames()
+{
+	FWidgetJsonSync::ValidateAllWidgetBlueprints();
+}
+
+void FWidgetJsonBridgeEditorModule::ExportPropertySchema()
+{
+	FString OutPath;
+	FString Error;
+	if (!FWidgetJsonSync::ExportPropertySchemaToFile(OutPath, Error))
+	{
+		UE_LOG(LogTemp, Error, TEXT("WidgetJsonBridge: 属性 Schema 导出失败：%s"), *Error);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("WidgetJsonBridge: 属性 Schema 已导出到 %s"), *OutPath);
+	FPlatformProcess::ExploreFolder(*FPaths::GetPath(OutPath));
+}
+
 bool FWidgetJsonBridgeEditorModule::OnTick(float DeltaTime)
 {
+	// PIE 期间重建资产会让运行中的 widget 实例引用失效，跳过这一秒。
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return true;
+	}
 	FWidgetJsonSync::Get().Tick();
 	return true;
 }
@@ -131,6 +200,11 @@ bool FWidgetJsonBridgeEditorModule::OnTick(float DeltaTime)
 void FWidgetJsonBridgeEditorModule::OnPackageSaved(const FString& PackageFilename, UPackage* Package, FObjectPostSaveContext SaveContext)
 {
 	if (!Package || !GEditor)
+	{
+		return;
+	}
+	// cook 期间也会触发保存事件，不能把被 cook 的 WBP 反写成项目里的 JSON。
+	if (SaveContext.IsCooking())
 	{
 		return;
 	}
