@@ -348,7 +348,7 @@ bool FWidgetJsonSync::ImportJsonFile(const FString& JsonFilePath)
 
 	// 编译失败时不要把坏资产存盘，也不要把该 JSON 标记为已同步。
 	FCompilerResultsLog CompileResults;
-	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileResults);
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipDefaultObjectValidation, &CompileResults);
 	if (CompileResults.NumErrors > 0)
 	{
 		Error = FString::Printf(TEXT("WidgetBlueprint 编译失败（%d 个错误），详见 Output Log"), CompileResults.NumErrors);
@@ -358,7 +358,7 @@ bool FWidgetJsonSync::ImportJsonFile(const FString& JsonFilePath)
 			Transaction->Cancel();
 		}
 		// 撤销的是 WidgetBlueprint 快照，不会回滚已经跑完的编译；补一次让 GeneratedClass 回到旧树。
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipDefaultObjectValidation);
 		ReportImportFailure(JsonFilePath, AssetPath, Error);
 		UE_LOG(LogTemp, Error, TEXT("WidgetJsonBridge: 编译失败 %s : %s"), *JsonFilePath, *Error);
 		return false;
